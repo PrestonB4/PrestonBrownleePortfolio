@@ -11,12 +11,14 @@ CORS(app)
 
 # Import and register blueprints
 from apps.nlp_sentiment.nlp_blueprint import nlp_bp
+from apps.nba_team.nba_team_blueprint import nba_bp
 
 app.register_blueprint(nlp_bp)
+app.register_blueprint(nba_bp)
 
 # Add more blueprints here as you create more apps:
-# from apps.app2.app2_blueprint import app2_bp
-# app.register_blueprint(app2_bp)
+# from apps.app3.app3_blueprint import app3_bp
+# app.register_blueprint(app3_bp)
 
 @app.route('/')
 def index():
@@ -24,6 +26,7 @@ def index():
         "message": "Portfolio API Hub",
         "apps": [
             {"name": "NLP Sentiment Analyzer", "endpoint": "/api/nlp"},
+            {"name": "NBA Team Optimizer", "endpoint": "/api/nba"},
             # Add more apps here
         ]
     })
