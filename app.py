@@ -12,13 +12,11 @@ CORS(app)
 # Import and register blueprints
 from apps.nlp_sentiment.nlp_blueprint import nlp_bp
 from apps.nba_team.nba_team_blueprint import nba_bp
+from apps.image_classifier.image_classifier_blueprint import image_bp
 
 app.register_blueprint(nlp_bp)
 app.register_blueprint(nba_bp)
-
-# Add more blueprints here as you create more apps:
-# from apps.app3.app3_blueprint import app3_bp
-# app.register_blueprint(app3_bp)
+app.register_blueprint(image_bp)
 
 @app.route('/')
 def index():
@@ -27,7 +25,7 @@ def index():
         "apps": [
             {"name": "NLP Sentiment Analyzer", "endpoint": "/api/nlp"},
             {"name": "NBA Team Optimizer", "endpoint": "/api/nba"},
-            # Add more apps here
+            {"name": "Image Classifier (Cats vs Dogs)", "endpoint": "/api/image-classifier"}
         ]
     })
 
