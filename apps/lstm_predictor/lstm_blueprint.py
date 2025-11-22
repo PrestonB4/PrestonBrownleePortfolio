@@ -7,6 +7,9 @@ import numpy as np
 import pickle
 import string
 import os
+import gc
+import threading
+import time
 
 # TensorFlow imports
 import tensorflow as tf
@@ -18,38 +21,69 @@ lstm_bp = Blueprint('lstm', __name__, url_prefix='/api/lstm')
 _model = None
 _tokenizer = None
 _config = None
+_last_used = None
+_cleanup_timer = None
+_lock = threading.Lock()
+
+# Cleanup timeout in seconds (10 minutes of inactivity)
+CLEANUP_TIMEOUT = 600
+
+def cleanup_model():
+    """Unload model from memory after timeout"""
+    global _model, _tokenizer, _config, _cleanup_timer
+    with _lock:
+        if _model is not None and time.time() - _last_used > CLEANUP_TIMEOUT:
+            print("LSTM model inactive for 10 minutes, cleaning up...")
+            _model = None
+            _tokenizer = None
+            _config = None
+            gc.collect()
+            print("LSTM model unloaded from memory")
+        _cleanup_timer = None
+
+def schedule_cleanup():
+    """Schedule model cleanup after timeout"""
+    global _cleanup_timer
+    if _cleanup_timer:
+        _cleanup_timer.cancel()
+    _cleanup_timer = threading.Timer(CLEANUP_TIMEOUT, cleanup_model)
+    _cleanup_timer.daemon = True
+    _cleanup_timer.start()
 
 def get_model_artifacts():
     """Lazy load the trained model, tokenizer, and config."""
-    global _model, _tokenizer, _config
+    global _model, _tokenizer, _config, _last_used
 
-    if _model is None:
-        # Path to model artifacts
-        base_path = os.path.dirname(os.path.abspath(__file__))
-        models_path = os.path.join(base_path, 'models')
+    with _lock:
+        if _model is None:
+            # Path to model artifacts
+            base_path = os.path.dirname(os.path.abspath(__file__))
+            models_path = os.path.join(base_path, 'models')
 
-        print("Loading LSTM model artifacts...")
+            print("Loading LSTM model artifacts...")
 
-        # Load model
-        model_path = os.path.join(models_path, 'best_lstm_model.keras')
-        _model = keras.models.load_model(model_path)
-        print(f"✓ Loaded LSTM model from {model_path}")
+            # Load model
+            model_path = os.path.join(models_path, 'best_lstm_model.keras')
+            _model = keras.models.load_model(model_path)
+            print(f"✓ Loaded LSTM model from {model_path}")
 
-        # Load tokenizer
-        tokenizer_path = os.path.join(models_path, 'tokenizer.pickle')
-        with open(tokenizer_path, 'rb') as f:
-            _tokenizer = pickle.load(f)
-        print(f"✓ Loaded tokenizer from {tokenizer_path}")
+            # Load tokenizer
+            tokenizer_path = os.path.join(models_path, 'tokenizer.pickle')
+            with open(tokenizer_path, 'rb') as f:
+                _tokenizer = pickle.load(f)
+            print(f"✓ Loaded tokenizer from {tokenizer_path}")
 
-        # Load config
-        config_path = os.path.join(models_path, 'model_config.pickle')
-        with open(config_path, 'rb') as f:
-            _config = pickle.load(f)
-        print(f"✓ Loaded config from {config_path}")
+            # Load config
+            config_path = os.path.join(models_path, 'model_config.pickle')
+            with open(config_path, 'rb') as f:
+                _config = pickle.load(f)
+            print(f"✓ Loaded config from {config_path}")
 
-        print("LSTM artifacts loaded successfully!")
+            print("LSTM artifacts loaded successfully!")
 
-    return _model, _tokenizer, _config
+        _last_used = time.time()
+        schedule_cleanup()
+        return _model, _tokenizer, _config
 
 def predict_next_word(text, num_predictions=5):
     """

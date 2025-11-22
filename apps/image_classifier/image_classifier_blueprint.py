@@ -8,6 +8,9 @@ from PIL import Image
 import random
 from pathlib import Path
 import base64
+import gc
+import threading
+import time
 
 # Create blueprint
 image_bp = Blueprint('image_classifier', __name__, url_prefix='/api/image-classifier')
@@ -15,21 +18,53 @@ image_bp = Blueprint('image_classifier', __name__, url_prefix='/api/image-classi
 # Lazy loading - model loaded only when first used
 _model = None
 _class_names = None
+_last_used = None
+_cleanup_timer = None
+_lock = threading.Lock()
+
+# Cleanup timeout in seconds (10 minutes of inactivity)
+CLEANUP_TIMEOUT = 600
+
+def cleanup_model():
+    """Unload model from memory after timeout"""
+    global _model, _class_names, _cleanup_timer
+    with _lock:
+        if _model is not None and time.time() - _last_used > CLEANUP_TIMEOUT:
+            print("Image classifier model inactive for 10 minutes, cleaning up...")
+            _model = None
+            _class_names = None
+            gc.collect()
+            print("Image classifier model unloaded from memory")
+        _cleanup_timer = None
+
+def schedule_cleanup():
+    """Schedule model cleanup after timeout"""
+    global _cleanup_timer
+    if _cleanup_timer:
+        _cleanup_timer.cancel()
+    _cleanup_timer = threading.Timer(CLEANUP_TIMEOUT, cleanup_model)
+    _cleanup_timer.daemon = True
+    _cleanup_timer.start()
 
 def get_model():
     """Lazy load the CNN model to save memory"""
-    global _model, _class_names
-    if _model is None:
-        # Load the trained model
-        model_path = os.path.join(os.path.dirname(__file__), 'models', 'improved_model_catsdogs.keras')
-        _model = keras.models.load_model(model_path)
+    global _model, _class_names, _last_used
+    with _lock:
+        if _model is None:
+            print("Loading Image Classifier model...")
+            # Load the trained model
+            model_path = os.path.join(os.path.dirname(__file__), 'models', 'improved_model_catsdogs.keras')
+            _model = keras.models.load_model(model_path)
 
-        # Load class names
-        class_names_path = os.path.join(os.path.dirname(__file__), 'models', 'class_names.txt')
-        with open(class_names_path, 'r') as f:
-            _class_names = [line.strip() for line in f.readlines()]
+            # Load class names
+            class_names_path = os.path.join(os.path.dirname(__file__), 'models', 'class_names.txt')
+            with open(class_names_path, 'r') as f:
+                _class_names = [line.strip() for line in f.readlines()]
+            print("Image Classifier model loaded successfully")
 
-    return _model, _class_names
+        _last_used = time.time()
+        schedule_cleanup()
+        return _model, _class_names
 
 def preprocess_image(image_bytes):
     """Preprocess image for model prediction"""

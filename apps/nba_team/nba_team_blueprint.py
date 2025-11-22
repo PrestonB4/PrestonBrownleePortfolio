@@ -5,6 +5,9 @@ import pandas as pd
 import numpy as np
 import os
 import sys
+import gc
+import threading
+import time
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(__file__))
@@ -19,52 +22,84 @@ nba_bp = Blueprint('nba', __name__, url_prefix='/api/nba')
 # Lazy loading - data and model loaded only when first used
 _data_cache = None
 _model_cache = None
+_last_used = None
+_cleanup_timer = None
+_lock = threading.Lock()
+
+# Cleanup timeout in seconds (10 minutes of inactivity)
+CLEANUP_TIMEOUT = 600
+
+def cleanup_model():
+    """Unload model from memory after timeout"""
+    global _data_cache, _model_cache, _cleanup_timer
+    with _lock:
+        if _data_cache is not None and time.time() - _last_used > CLEANUP_TIMEOUT:
+            print("NBA model inactive for 10 minutes, cleaning up...")
+            _data_cache = None
+            _model_cache = None
+            gc.collect()
+            print("NBA model unloaded from memory")
+        _cleanup_timer = None
+
+def schedule_cleanup():
+    """Schedule model cleanup after timeout"""
+    global _cleanup_timer
+    if _cleanup_timer:
+        _cleanup_timer.cancel()
+    _cleanup_timer = threading.Timer(CLEANUP_TIMEOUT, cleanup_model)
+    _cleanup_timer.daemon = True
+    _cleanup_timer.start()
 
 def get_data():
     """Lazy load and process player data"""
-    global _data_cache
-    if _data_cache is None:
-        base_path = os.path.dirname(__file__)
+    global _data_cache, _last_used
+    with _lock:
+        if _data_cache is None:
+            print("Loading NBA model and data...")
+            base_path = os.path.dirname(__file__)
 
-        # Load data
-        df = pd.read_csv(os.path.join(base_path, "data", "preprocessed_players.csv"))
-        X_train = np.load(os.path.join(base_path, "data", "X_train.npy"))
-        y_train = np.load(os.path.join(base_path, "data", "y_train.npy"))
-        X_test = np.load(os.path.join(base_path, "data", "X_test.npy"))
-        y_test = np.load(os.path.join(base_path, "data", "y_test.npy"))
-        X_all = np.load(os.path.join(base_path, "data", "X_all.npy"))
+            # Load data
+            df = pd.read_csv(os.path.join(base_path, "data", "preprocessed_players.csv"))
+            X_train = np.load(os.path.join(base_path, "data", "X_train.npy"))
+            y_train = np.load(os.path.join(base_path, "data", "y_train.npy"))
+            X_test = np.load(os.path.join(base_path, "data", "X_test.npy"))
+            y_test = np.load(os.path.join(base_path, "data", "y_test.npy"))
+            X_all = np.load(os.path.join(base_path, "data", "X_all.npy"))
 
-        try:
-            with open(os.path.join(base_path, "data", "season_label.txt"), "r") as f:
-                season_label = f.read().strip()
-        except Exception:
-            season_label = "Selected Seasons"
+            try:
+                with open(os.path.join(base_path, "data", "season_label.txt"), "r") as f:
+                    season_label = f.read().strip()
+            except Exception:
+                season_label = "Selected Seasons"
 
-        # Train model
-        model = ANN(layer_dims=[12, 32, 16, 1], learning_rate=0.01, epochs=1000)
-        model.fit(X_train, y_train)
+            # Train model
+            model = ANN(layer_dims=[12, 32, 16, 1], learning_rate=0.01, epochs=1000)
+            model.fit(X_train, y_train)
 
-        # Get predictions
-        y_pred_test = model.predict(X_test)
-        test_acc = (y_pred_test == y_test).mean() * 100
+            # Get predictions
+            y_pred_test = model.predict(X_test)
+            test_acc = (y_pred_test == y_test).mean() * 100
 
-        pred_all = model.predict(X_all).flatten().astype(int)
-        proba_all = model.predict_proba(X_all).flatten()
+            pred_all = model.predict(X_all).flatten().astype(int)
+            proba_all = model.predict_proba(X_all).flatten()
 
-        df["prediction"] = pred_all
-        df["pred_proba"] = proba_all
+            df["prediction"] = pred_all
+            df["pred_proba"] = proba_all
 
-        # Calculate scores
-        df = calculate_scores(df)
+            # Calculate scores
+            df = calculate_scores(df)
 
-        _data_cache = {
-            "df": df,
-            "model": model,
-            "test_acc": test_acc,
-            "season_label": season_label
-        }
+            _data_cache = {
+                "df": df,
+                "model": model,
+                "test_acc": test_acc,
+                "season_label": season_label
+            }
+            print("NBA model loaded successfully")
 
-    return _data_cache
+        _last_used = time.time()
+        schedule_cleanup()
+        return _data_cache
 
 
 @nba_bp.route('/health', methods=['GET'])
