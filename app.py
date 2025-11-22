@@ -13,10 +13,12 @@ CORS(app)
 from apps.nlp_sentiment.nlp_blueprint import nlp_bp
 from apps.nba_team.nba_team_blueprint import nba_bp
 from apps.image_classifier.image_classifier_blueprint import image_bp
+from apps.lstm_predictor.lstm_blueprint import lstm_bp
 
 app.register_blueprint(nlp_bp)
 app.register_blueprint(nba_bp)
 app.register_blueprint(image_bp)
+app.register_blueprint(lstm_bp)
 
 @app.route('/')
 def index():
@@ -25,7 +27,8 @@ def index():
         "apps": [
             {"name": "NLP Sentiment Analyzer", "endpoint": "/api/nlp"},
             {"name": "NBA Team Optimizer", "endpoint": "/api/nba"},
-            {"name": "Image Classifier (Cats vs Dogs)", "endpoint": "/api/image-classifier"}
+            {"name": "Image Classifier (Cats vs Dogs)", "endpoint": "/api/image-classifier"},
+            {"name": "LSTM Next Word Predictor", "endpoint": "/api/lstm"}
         ]
     })
 
