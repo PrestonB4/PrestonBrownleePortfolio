@@ -130,19 +130,19 @@ def predict():
 
 @image_bp.route('/random', methods=['GET'])
 def get_random_image():
-    """Get a random image from the dataset"""
+    """Get a random image from the sample dataset"""
     try:
-        # Path to dataset
-        dataset_path = Path(__file__).parent.parent.parent / 'NeuralNetwork' / 'data_large' / 'test'
+        # Path to sample images directory (included in repo)
+        dataset_path = Path(__file__).parent / 'sample_images'
 
         # Check if dataset exists
         if not dataset_path.exists():
-            return jsonify({"error": "Dataset not found"}), 404
+            return jsonify({"error": "Sample images not found"}), 404
 
         # Get random class (cats or dogs)
         class_dirs = [d for d in dataset_path.iterdir() if d.is_dir()]
         if not class_dirs:
-            return jsonify({"error": "No images found in dataset"}), 404
+            return jsonify({"error": "No images found in sample dataset"}), 404
 
         random_class_dir = random.choice(class_dirs)
 
