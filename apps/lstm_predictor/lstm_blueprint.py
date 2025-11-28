@@ -10,12 +10,18 @@ import os
 import gc
 import threading
 import time
+import psutil
 
 # TensorFlow imports
 import tensorflow as tf
 from tensorflow import keras
 
 lstm_bp = Blueprint('lstm', __name__, url_prefix='/api/lstm')
+
+def get_memory_usage():
+    """Get current memory usage in MB"""
+    process = psutil.Process()
+    return process.memory_info().rss / 1024 / 1024  # Convert to MB
 
 # Global variables for lazy loading
 _model = None
@@ -56,6 +62,10 @@ def get_model_artifacts():
 
     with _lock:
         if _model is None:
+            # Measure memory before loading
+            mem_before = get_memory_usage()
+            print(f"Memory before loading LSTM: {mem_before:.2f} MB")
+
             # Path to model artifacts
             base_path = os.path.dirname(os.path.abspath(__file__))
             models_path = os.path.join(base_path, 'models')
@@ -79,6 +89,11 @@ def get_model_artifacts():
                 _config = pickle.load(f)
             print(f"✓ Loaded config from {config_path}")
 
+            # Measure memory after loading
+            mem_after = get_memory_usage()
+            mem_used = mem_after - mem_before
+            print(f"Memory after loading LSTM: {mem_after:.2f} MB")
+            print(f"LSTM model uses: {mem_used:.2f} MB")
             print("LSTM artifacts loaded successfully!")
 
         _last_used = time.time()
@@ -174,6 +189,17 @@ def health_check():
     return jsonify({
         'status': 'healthy',
         'model_loaded': _model is not None
+    })
+
+@lstm_bp.route('/memory', methods=['GET'])
+def memory_stats():
+    """Get current memory usage statistics."""
+    process = psutil.Process()
+    mem_info = process.memory_info()
+    return jsonify({
+        'total_memory_mb': mem_info.rss / 1024 / 1024,
+        'model_loaded': _model is not None,
+        'message': 'Load the model by calling /predict or /complete to see memory increase'
     })
 
 @lstm_bp.route('/predict', methods=['POST'])
